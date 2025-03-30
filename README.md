@@ -7,12 +7,12 @@
 ## Features
 
 - Drag-and-drop tile mechanics using React DnD
-- Real-time word validation using a Free Dictionary API
+- Real-time word validation using local SOWPOD json file
 - "Spin" mechanic: exchange a single tile for three random new ones
 - "Boogie" mechanic: place all rack tiles in valid, connected words to receive one new tile
 - Visual feedback for valid vs. invalid tile placement
 - Responsive layout that dynamically resizes the game board
-- Minimalist, tropical-inspired UI with sound feedback
+- Midcentury Modern Inspired theme
 
 ---
 
