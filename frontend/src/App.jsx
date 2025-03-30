@@ -4,37 +4,19 @@ import { HTML5Backend } from "react-dnd-html5-backend";
 import GameBoard from "./components/GameBoard";
 import TileRack from "./components/TileRack";
 import SpinZone from "./components/SpinZone";
+import { CustomDragPreview } from "./components/Tile";
 
-// Randomized, trimmed pool of tiles based on BananaGrams letter distribution
-const generateScaledTilePool = (distribution, targetTotal) => {
-    const allTiles = [];
-
-    Object.entries(distribution).forEach(([letter, count]) => {
-        for (let i = 0; i < count; i++) {
-            allTiles.push(letter);
-        }
-    });
-
-    // Shuffle
-
-    for (let i = allTiles.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [allTiles[i], allTiles[j]] = [allTiles[j], allTiles[i]];
-    }
-
-    // Trim until target size + assign IDs
-
-    const trimmed = allTiles.slice(0, targetTotal);
-
-    return trimmed.map((letter, index) => ({
-        id: `${letter}-${index}-${Date.now()}`,
-        letter,
-    }));
-};
+/**
+ * App manages the game state of CabanaTiles
+ * Initializes tile distribution and pool
+ * Handles the state of both GameBoard and TileRack
+ * Manages the "Boogie" and "Spin" mechanics
+ * Provides context for DnD
+ */
 
 function App() {
     console.log("Rendering App...");
-
+    // Letter distribution for the "pile"
     const distribution = {
         A: 13,
         B: 3,
@@ -64,49 +46,90 @@ function App() {
         Z: 2,
     };
 
-    const totalTiles = 76; // Starting pool length + rack length for 1P MVP
+    const totalTiles = 76; // This value will change as multiplayer mode(s) are introduced
     const rackSize = 21;
 
-    const fullPool = generateScaledTilePool(distribution, totalTiles);
-    const initialRack = fullPool.slice(0, rackSize);
-    const initialRemainingPool = fullPool.slice(rackSize);
+    const tileIdRef = useRef(0);
 
-    // Game State
+    // Generates randomized tile pool while preserving letter frequencies
+    const generateScaledTilePool = (distribution, targetTotal) => {
+        const allTiles = [];
+        Object.entries(distribution).forEach(([letter, count]) => {
+            for (let i = 0; i < count; i++) allTiles.push(letter);
+        });
+        //Shuffles Tiles
+        for (let i = allTiles.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [allTiles[i], allTiles[j]] = [allTiles[j], allTiles[i]];
+        }
+        //Final pool of tiles that players will use
+        return allTiles.slice(0, targetTotal).map((letter) => {
+            tileIdRef.current += 1;
+            return { id: `tile-${tileIdRef.current}`, letter };
+        });
+    };
 
-    const [rackTiles, setRackTiles] = useState(initialRack);
-    const [remainingPool, setRemainingPool] = useState(initialRemainingPool);
+    // Game States and Refs
+    const [fullPool] = useState(() =>
+        generateScaledTilePool(distribution, totalTiles)
+    );
+
+    const [rackTiles, setRackTiles] = useState(() =>
+        fullPool.slice(0, rackSize)
+    );
+    const [remainingPool, setRemainingPool] = useState(() =>
+        fullPool.slice(rackSize)
+    );
     const [tiles, setTiles] = useState({});
     const processedTileIds = useRef(new Set());
 
-    // Boogie logic and listener, player must use all tiles from rack towards approved words to trigger
+    const remainingPoolRef = useRef(remainingPool);
+    const triggerBoogie = () => {
+        const event = new Event("triggerBoogie");
+        window.dispatchEvent(event);
+    };
 
+    // Keep remainingPool in sync with a ref to avoid duplicate listeners
     useEffect(() => {
-        const handleBoogie = () => {
-            if (remainingPool.length === 0) {
-                console.log("No tiles left in pool for Boogying.");
-                return;
-            }
-
-            const [nextTile, ...rest] = remainingPool;
-            const boogieTile = {
-                ...nextTile,
-                id: `TILE-${nextTile.letter}-${Date.now()}-${Math.random()}`,
-                isNew: true,
-            };
-
-            setRackTiles((prev) => [...prev, boogieTile]);
-            setRemainingPool(rest);
-
-            console.log("Boogie", boogieTile);
-            console.log("Remaining pool size:", rest.length);
-        };
-
-        window.addEventListener("triggerBoogie", handleBoogie);
-        return () => window.removeEventListener("triggerBoogie", handleBoogie);
+        remainingPoolRef.current = remainingPool;
     }, [remainingPool]);
 
-    // Send tile back to pile when DnD'd to Icon
+    //Stable listener for "Boogie" with zero dependency array
+    useEffect(() => {
+        const handleBoogie = () => {
+            setRemainingPool((prev) => {
+                if (prev.length === 0) return prev;
 
+                const [nextTile, ...rest] = prev;
+
+                tileIdRef.current += 1;
+
+                const boogieTile = {
+                    ...nextTile,
+                    id: `tile-${tileIdRef.current}`,
+                    isNew: true,
+                };
+
+                setRackTiles((prevRack) => [...prevRack, boogieTile]);
+                console.log("Boogie", boogieTile);
+                console.log("Remaining pool size:", rest.length);
+                return rest;
+            });
+        };
+
+        // Make sure Boogie only yields a single tile
+        if (!window.boogieListenerAdded) {
+            window.addEventListener("triggerBoogie", handleBoogie);
+            window.boogieListenerAdded = true;
+        }
+
+        return () => {
+            window.removeEventListener("triggerBoogie", handleBoogie);
+            window.boogieListenerAdded = false;
+        };
+    }, []);
+
+    //Removes a tile from board if "Spun"
     const onBoardTileSpun = (tile) => {
         setTiles((prev) => {
             const newTiles = { ...prev };
@@ -114,56 +137,37 @@ function App() {
             return newTiles;
         });
     };
-
-    // 1 tile DnD'd = 3 random tiles yielded from pool
-
+    // Handles tile logic from both board and rack, prevents overdraws
     const handleSpin = (tileToSpin) => {
-        if (
-            !tileToSpin ||
-            (!tileToSpin.id &&
-                (tileToSpin.origin !== "board" ||
-                    tileToSpin.x == null ||
-                    tileToSpin.y == null))
-        ) {
-            console.warn("Invalid tile:", tileToSpin);
+        if (remainingPoolRef.current.length < 3) {
+            alert("Not enough tiles left in the pool!");
             return;
         }
 
-        if (remainingPool.length < 3) {
-            alert("Not enough tiles left in the pool for boogying!");
-            return;
-        }
+        const newTiles = remainingPoolRef.current.slice(0, 3).map((tile) => {
+            tileIdRef.current += 1;
+            return { ...tile, id: `tile-${tileIdRef.current}`, isNew: true };
+        });
 
-        const newPool = [...remainingPool, tileToSpin];
-        for (let i = newPool.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [newPool[i], newPool[j]] = [newPool[j], newPool[i]];
-        }
+        setRemainingPool((prevPool) => prevPool.slice(3));
 
-        const newTiles = newPool.slice(0, 3).map((tile) => ({
-            ...tile,
-            id: `TILE-${tile.letter}-${Date.now()}-${Math.random()}`,
-            isNew: true,
-        }));
+        setRackTiles((prevRack) =>
+            tileToSpin.origin === "rack"
+                ? [
+                      ...prevRack.filter((t) => t.id !== tileToSpin.id),
+                      ...newTiles,
+                  ]
+                : [...prevRack, ...newTiles]
+        );
 
-        setRemainingPool(newPool.slice(3));
-        setRackTiles((prev) => [...prev, ...newTiles]);
-
-        if (tileToSpin.origin === "rack") {
-            setRackTiles((prevRack) =>
-                prevRack.filter((t) => t.id !== tileToSpin.id)
-            );
-        } else if (tileToSpin.origin === "board") {
+        if (tileToSpin.origin === "board") {
             onBoardTileSpun(tileToSpin);
         }
-
-        console.log("Spun tile:", tileToSpin);
-        console.log("Gained tiles from pool:", newTiles);
-        console.log("Pool size:", newPool.length - 3);
     };
 
     return (
         <DndProvider backend={HTML5Backend}>
+            <CustomDragPreview />
             <div className="relative w-screen h-screen overflow-hidden">
                 <div
                     className="absolute inset-0 w-full h-full bg-cover bg-center z-0"
@@ -172,36 +176,30 @@ function App() {
                             "url('/images/redTealGeo_background.jpg')",
                     }}
                 ></div>
-                /* Anchored Tile Container -- Handles rendering of tiles and
-                "Spin" mechanic */
+
                 <div className="absolute bottom-5 w-full flex justify-center z-50 px-4">
                     <TileRack tiles={rackTiles} onSpin={handleSpin} />
                 </div>
+
                 <div className="absolute inset-0 z-10">
                     <GameBoard
                         tiles={tiles}
                         setTiles={setTiles}
                         rackTiles={rackTiles}
-                        onTilePlacedFromRack={(
-                            // Updates state of rackTiles upon moving a tile from the rack to the board
-                            tileId
-                        ) =>
+                        onTilePlacedFromRack={(tileId) =>
                             setRackTiles((prev) =>
                                 prev.filter((tile) => tile.id !== tileId)
                             )
                         }
-                        // Stopgap to prevent Board -> Rack events from creating duplicate tiles
                         onTileReturnToRack={(tile) => {
-                            if (!tile?.id) {
+                            if (
+                                !tile?.id ||
+                                processedTileIds.current.has(tile.id)
+                            ) {
                                 console.warn(
-                                    "Tile missing ID. Skipping return.",
+                                    "Duplicate or missing ID blocked:",
                                     tile
                                 );
-                                return;
-                            }
-
-                            if (processedTileIds.current.has(tile.id)) {
-                                console.warn("Duplicate return blocked:", tile);
                                 return;
                             }
 
@@ -214,23 +212,26 @@ function App() {
                                 y: null,
                             };
 
-                            setRackTiles((prev) => {
-                                if (prev.some((t) => t.id === safeTile.id))
-                                    return prev;
-                                return [...prev, safeTile];
-                            });
+                            setRackTiles((prev) =>
+                                prev.some((t) => t.id === safeTile.id)
+                                    ? prev
+                                    : [...prev, safeTile]
+                            );
 
                             processedTileIds.current.delete(tile.id);
                         }}
-                        onBoardTileSpun={onBoardTileSpun}
                         processedTileIdsRef={processedTileIds}
+                        triggerBoogie={triggerBoogie}
                     />
                 </div>
+
                 <SpinZone onSpin={handleSpin} />
+
                 <div className="absolute bottom-1 left-1 z-50 text-xs text-white bg-black/50 px-2 py-1 rounded">
                     <div> Pile: {remainingPool.length}</div>
                     <div> Rack: {rackTiles.length}</div>
                 </div>
+
                 <div className="absolute bottom-1 right-1 z-50 text-xs text-white bg-black/50 px-2 py-1 rounded">
                     Pattern via{" "}
                     <a

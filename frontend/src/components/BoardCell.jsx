@@ -2,61 +2,53 @@ import React, { useEffect, useRef } from "react";
 import { useDrop } from "react-dnd";
 import Tile from "./Tile";
 
-/**BoardCell represents a given square on the game board.
- * This file handles the logic for dropping tiles via React DnD and
- * holds feedback for occupancy and validity of square (does the tile on the square form a valid word w all contiguous tiles?)
- */
+/* Boardcell represents a single cell on the game board. 
+It handles drag-and-drop interactions with ReactDND
+Also some tile placement logic and visual feedback related to word validity.
+Recently stripped of certain visual feedback elements due to insane performance tax
+
+*/
 
 const BoardCell = ({ x, y, tile, tiles, onDrop, onClick, isValid }) => {
-    // Accesses most recent tiles state for canDrop && drop functions
+    // Maintains a live ref to the latest tile object to avoid stale closure .
     const tilesRef = useRef(tiles);
     useEffect(() => {
         tilesRef.current = tiles;
     }, [tiles]);
 
-    // Configures cell as a drop target with DnD
-    const [{ isOver, canDrop }, drop] = useDrop(() => ({
+    // Configures cell as a potential location for a tile drop
+    const [, drop] = useDrop(() => ({
         accept: "TILE",
         canDrop: () => {
+            // Unless it's occupied
             const key = `${x},${y}`;
-            const occupied = Boolean(tilesRef.current[key]);
-            return !occupied;
+            return !tilesRef.current[key];
         },
-        // Prevents dropping on an occupied square, will possibly include audio feedback in future
+
+        // If not, the tile drops on the square
         drop: (item) => {
             const key = `${x},${y}`;
-            if (tilesRef.current[key]) {
-                return;
+            if (!tilesRef.current[key]) {
+                onDrop(item, x, y);
             }
-            onDrop(item, x, y);
         },
-        collect: (monitor) => ({
-            isOver: monitor.isOver(),
-            canDrop: monitor.canDrop(),
-        }),
     }));
-
+    // Keeps track of previous tile for console logging removal and placement
     const prevTileRef = useRef(tile);
-
     useEffect(() => {
-        // Tracks tile itenerary for debugging purposes
         const prevTile = prevTileRef.current;
-
         if (!prevTile && tile) {
             console.log(`Tile placed at (${x}, ${y}):`, tile);
         } else if (prevTile && !tile) {
             console.log(`Tile removed from (${x}, ${y})`);
         }
-
         prevTileRef.current = tile;
     }, [tile, x, y]);
 
     return (
         <div
             ref={drop}
-            className={`w-[60px] h-[60px] border border-gray-500 bg-transparent flex items-center justify-center 
-                ${isOver && !canDrop ? "bg-red-300 border-4 border-red-600" : ""}
-                ${isOver && canDrop ? "bg-green-300" : ""}
+            className={`w-[60px] h-[60px] border border-gray-500 bg-transparent flex items-center justify-center
                 ${isValid ? "bg-green-500" : ""}`}
             onClick={(e) => {
                 e.stopPropagation();
@@ -75,5 +67,10 @@ const BoardCell = ({ x, y, tile, tiles, onDrop, onClick, isValid }) => {
         </div>
     );
 };
-
-export default BoardCell;
+// Prevent unnecessary renders of cells unless the tile or validity changes
+export default React.memo(BoardCell, (prevProps, nextProps) => {
+    return (
+        prevProps.tile === nextProps.tile &&
+        prevProps.isValid === nextProps.isValid
+    );
+});

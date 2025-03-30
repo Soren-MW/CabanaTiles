@@ -1,52 +1,70 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import BoardCell from "./BoardCell";
-
-// Constant size of each square on the game board
+// Constants for square dimensions
 const BOARD_SQUARE_WIDTH = 60;
 const BOARD_SQUARE_HEIGHT = 60;
-/**
- * GameBoard renders the dynamic grid environment for the game.
- * Handled within GameBoard are:
- * Layout resizing based on window dimensions
- * Word validity
- * Drop handling between the rack and board
- * "Boogie" Logic
- * Click-to-return events
- *
- */
+
 const GameBoard = ({
     tiles,
     setTiles,
     rackTiles,
     onTilePlacedFromRack,
     onTileReturnToRack,
-    onBoardTileSpun,
     processedTileIdsRef,
+    triggerBoogie,
 }) => {
     const wrapperRef = useRef(null);
     const [gridSizeX, setGridSizeX] = useState(10);
     const [gridSizeY, setGridSizeY] = useState(10);
     const [validWords, setValidWords] = useState(new Set());
+    const [recentTileCoords, setRecentTileCoords] = useState([]);
+    const prevWordsRef = useRef(new Map());
+    const invalidPositionsRef = useRef(new Set());
+    const wordSetRef = useRef(null);
+    const dropSoundRef = useRef(null);
 
-    // Grid size calculation based on dimensions of window
+    // Loads and prepares sound feedback for tile placement
+    useEffect(() => {
+        dropSoundRef.current = new Audio("/sounds/Click.mp3");
+        dropSoundRef.current.volume = 0.5;
+        dropSoundRef.current.load();
+        return () => {
+            dropSoundRef.current.pause();
+            dropSoundRef.current = null;
+        };
+    }, []);
+    // Dynamically resizes grid as user shifts window dimensions
     useEffect(() => {
         const updateGridSize = () => {
-            if (wrapperRef.current) {
-                const { width, height } =
-                    wrapperRef.current.getBoundingClientRect();
-                const cols = Math.floor(width / BOARD_SQUARE_WIDTH);
-                const rows = Math.floor(height / BOARD_SQUARE_HEIGHT);
-                if (cols > 0 && rows > 0) {
-                    setGridSizeX(cols);
-                    setGridSizeY(rows);
-                }
-            }
+            const { width, height } =
+                wrapperRef.current.getBoundingClientRect();
+            const cols = Math.floor(width / BOARD_SQUARE_WIDTH);
+            const rows = Math.floor(height / BOARD_SQUARE_HEIGHT);
+            setGridSizeX(cols);
+            setGridSizeY(rows);
         };
         updateGridSize();
         window.addEventListener("resize", updateGridSize);
         return () => window.removeEventListener("resize", updateGridSize);
     }, []);
-    // Set of valid 2-letter Scrabble words for local validation and minimizing API calls
+
+    // Loads JSON of SOWPODS, a popular Scrabble dictionary, to use for fast word validation
+    useEffect(() => {
+        fetch("/sowpods.json")
+            .then((res) => res.json())
+            .then((data) => {
+                wordSetRef.current = new Set(data.map((w) => w.toLowerCase()));
+                console.log(
+                    "Word list loaded with",
+                    wordSetRef.current.size,
+                    "words"
+                );
+            })
+            .catch((err) => console.error("Failed to load word list", err));
+    }, []);
+
+    // Hardcoded two-letter word set leftover from when dictionary API was used for validation. Will get rid of it later.
+
     const twoLetterWords = new Set([
         "aa",
         "ab",
@@ -153,36 +171,22 @@ const GameBoard = ({
         "yo",
         "za",
     ]);
-    // Validates a word by checking its length, characters, and existence in the dictionary API
-    const isValidWord = async (word) => {
+    // Checks if word is valid. Pushes to whitelist of 2-letter words if length is 2, SOWPODS if greater.
+    const isValidWord = (word) => {
         if (!word || word.length < 2) return false;
-        const cleanWord = word.toLowerCase();
-        if (!/^[a-z]+$/.test(cleanWord)) return false;
-        if (cleanWord.length === 2) return twoLetterWords.has(cleanWord);
-        try {
-            const response = await fetch(
-                `https://api.dictionaryapi.dev/api/v2/entries/en/${cleanWord}`
-            );
-            if (!response.ok) return false;
-            const data = await response.json();
-            return (
-                Array.isArray(data) &&
-                data.length > 0 &&
-                data[0]?.word?.toLowerCase() === cleanWord
-            );
-        } catch (error) {
-            return false;
-        }
+        const clean = word.toLowerCase();
+        return word.length === 2
+            ? twoLetterWords.has(clean)
+            : wordSetRef.current?.has(clean);
     };
-    // Checks if the board is contiguous (one of the conditions to trigger a "Boogie") by traversing the tiles with BFS
+
+    //Implements BFS to confirm that all words on the board are contiguous (or connected)
     const isBoardContiguous = () => {
         const tilePositions = Object.keys(tiles);
         if (tilePositions.length === 0) return true;
-
         const visited = new Set();
         const queue = [tilePositions[0]];
         visited.add(tilePositions[0]);
-
         while (queue.length > 0) {
             const current = queue.shift();
             const [x, y] = current.split(",").map(Number);
@@ -192,7 +196,6 @@ const GameBoard = ({
                 [x, y - 1],
                 [x, y + 1],
             ];
-
             for (let [nx, ny] of neighbors) {
                 const neighborKey = `${nx},${ny}`;
                 if (tiles[neighborKey] && !visited.has(neighborKey)) {
@@ -201,26 +204,50 @@ const GameBoard = ({
                 }
             }
         }
-
         return visited.size === tilePositions.length;
     };
-    // Scans all rows and columns, validating the tiles as words and marking valid positions
-    const findWords = async () => {
-        let validPositions = new Set();
+    /**
+     * Checks rows and cols near recently changed tiles
+     * Checks if words are still valid
+     * Populates validWords for visual feedback (tiles are green if words are valid)
+     * Triggers "Boogie" if all words are valid + contiguous + the rack is empty.
+     
+     */
+    const validateAround = (coordsArray) => {
+        const validatedWords = new Set();
+        prevWordsRef.current.clear();
+        invalidPositionsRef.current.clear();
+        const wordMembershipMap = new Map();
 
-        const checkAndAddWord = async (word, positions) => {
-            if (word.length < 2) return;
-            const isValid = await isValidWord(word);
-            if (word.length === 2 && !twoLetterWords.has(word.toLowerCase())) {
-                return;
+        const addToWordMap = (pos, word) => {
+            const posKey = `${pos}`;
+            if (!wordMembershipMap.has(posKey)) {
+                wordMembershipMap.set(posKey, new Set());
             }
+            wordMembershipMap.get(posKey).add(word);
+        };
 
+        const checkAndAddWord = (word, positions) => {
+            if (word.length < 2) return;
+            const lowerWord = word.toLowerCase();
+            const key = positions.join("|");
+            const prevWord = prevWordsRef.current.get(key);
+            if (prevWord === word) return;
+            prevWordsRef.current.set(key, word);
+            const isValid = isValidWord(word);
+            positions.forEach((pos) => {
+                addToWordMap(`${pos}`, lowerWord);
+            });
             if (isValid) {
-                positions.forEach((pos) => validPositions.add(pos));
+                validatedWords.add(lowerWord);
+            } else {
+                positions.forEach((pos) =>
+                    invalidPositionsRef.current.add(`${pos}`)
+                );
             }
         };
 
-        for (let row = 0; row < gridSizeY; row++) {
+        const checkRow = (row) => {
             let word = "",
                 positions = [];
             for (let col = 0; col < gridSizeX; col++) {
@@ -230,15 +257,15 @@ const GameBoard = ({
                     word += tile.letter;
                     positions.push(key);
                 } else {
-                    await checkAndAddWord(word, positions);
+                    checkAndAddWord(word, positions);
                     word = "";
                     positions = [];
                 }
             }
-            await checkAndAddWord(word, positions);
-        }
+            checkAndAddWord(word, positions);
+        };
 
-        for (let col = 0; col < gridSizeX; col++) {
+        const checkCol = (col) => {
             let word = "",
                 positions = [];
             for (let row = 0; row < gridSizeY; row++) {
@@ -248,133 +275,141 @@ const GameBoard = ({
                     word += tile.letter;
                     positions.push(key);
                 } else {
-                    await checkAndAddWord(word, positions);
+                    checkAndAddWord(word, positions);
                     word = "";
                     positions = [];
                 }
             }
-            await checkAndAddWord(word, positions);
+            checkAndAddWord(word, positions);
+        };
+
+        for (const { x, y } of coordsArray) {
+            checkRow(y);
+            checkCol(x);
         }
 
-        setValidWords(validPositions);
-        // If all tiles are valid and contiguous and the rack is empty, trigger a "Boogie"
-        const allBoardKeys = Object.keys(tiles);
-        const allValid = allBoardKeys.every((key) => validPositions.has(key));
+        const trulyValidPositions = new Set();
+        for (const [pos, wordSet] of wordMembershipMap.entries()) {
+            let allValid = true;
+            for (const word of wordSet) {
+                if (!validatedWords.has(word)) {
+                    allValid = false;
+                    break;
+                }
+            }
+            if (allValid) {
+                trulyValidPositions.add(pos);
+            }
+        }
 
-        if (
-            allBoardKeys.length > 0 &&
-            allValid &&
-            isBoardContiguous() &&
-            rackTiles.length === 0 // ✅ rack must be empty!
-        ) {
-            console.log("Boogie triggered!");
-            window.dispatchEvent(new Event("triggerBoogie"));
+        setValidWords((prev) => {
+            const updated = new Set(prev);
+            for (const pos of Object.keys(tiles)) {
+                if (trulyValidPositions.has(pos)) {
+                    updated.add(pos);
+                } else {
+                    updated.delete(pos);
+                }
+            }
+            return updated;
+        });
+
+        const allPlacedTilesValid = Object.keys(tiles).every((key) =>
+            trulyValidPositions.has(key)
+        );
+        const contiguous = isBoardContiguous();
+        const rackEmpty = rackTiles.length === 0;
+
+        if (allPlacedTilesValid && contiguous && rackEmpty) {
+            triggerBoogie();
         }
     };
-    // Validates words whenever board tiles shift or change
+    // Starts validation whenever tile state changes. Will optimize this in the future
     useEffect(() => {
-        findWords();
-    }, [tiles]);
-    // Handles logic to drop tiles from rack to board, as well as between different board positions
-    const handleDrop = (item, x, y) => {
-        console.log(`Attempting to drop tile "${item.letter}" at (${x}, ${y})`);
-        const dropSound = new Audio("/sounds/Click.mp3");
-        dropSound.volume = 0.5;
-        dropSound.play();
-
-        console.log(`Original tile came from (${item.x}, ${item.y})`);
-
-        if (item.origin === "rack" && item.id) {
-            onTilePlacedFromRack(item.id);
-            processedTileIdsRef.current.delete(item.id);
+        if (Object.keys(tiles).length > 0) {
+            const allCoords = Object.keys(tiles).map((key) => {
+                const [x, y] = key.split(",").map(Number);
+                return { x, y };
+            });
+            validateAround(allCoords);
         }
+    }, [tiles, rackTiles]);
 
-        setTiles((prev) => {
-            const newTiles = { ...prev };
-            if (item.x !== undefined && item.y !== undefined) {
-                delete newTiles[`${item.x},${item.y}`];
-            }
-            const key = `${x},${y}`;
-            if (newTiles[key]) return prev;
-
-            newTiles[key] = {
-                ...item,
-                id:
-                    item.id ??
-                    `board-${item.letter}-${Date.now()}-${Math.random()}`,
+    // Handles tile placement, rendering, sound, and validation of nearby grid spaces.
+    const handleDrop = useCallback(
+        (item, x, y) => {
+            const originalTile = { ...item };
+            const movedTile = {
+                ...originalTile,
                 x,
                 y,
                 origin: "board",
             };
 
-            return newTiles;
-        });
-    };
-    // Handles logic to allow tiles to be returned to the rack by left-clicking on them
-    const lastClickedKeyRef = useRef(null);
+            setTiles((prevTiles) => {
+                const updatedTiles = { ...prevTiles };
+                if (originalTile.x !== null && originalTile.y !== null) {
+                    delete updatedTiles[`${originalTile.x},${originalTile.y}`];
+                }
+                updatedTiles[`${x},${y}`] = movedTile;
+                return updatedTiles;
+            });
+
+            if (originalTile.origin === "rack") {
+                onTilePlacedFromRack(originalTile.id);
+            }
+
+            const expandedCoords = [
+                { x, y },
+                { x: x - 1, y },
+                { x: x + 1, y },
+                { x, y: y - 1 },
+                { x, y: y + 1 },
+            ];
+            validateAround(expandedCoords);
+            setRecentTileCoords([{ x, y }]);
+        },
+        [setTiles, onTilePlacedFromRack, validateAround]
+    );
+    // Logic for returning tile to rack with left-click
     const handleClickEvent = (x, y) => {
         const key = `${x},${y}`;
-        if (lastClickedKeyRef.current === key) return;
-
-        lastClickedKeyRef.current = key;
-        setTimeout(() => {
-            lastClickedKeyRef.current = null;
-        }, 100); // Prevents accidental double-returns
-
+        onTileReturnToRack(tiles[key]);
         setTiles((prev) => {
-            const newTiles = { ...prev };
-            const tile = newTiles[key];
-            if (tile && !processedTileIdsRef.current.has(tile.id)) {
-                console.log(
-                    `Returning "${tile.letter}" from board to rack`,
-                    tile
-                );
-                onTileReturnToRack(tile);
-            }
-            delete newTiles[key];
-            return newTiles;
+            const updated = { ...prev };
+            delete updated[key];
+            return updated;
         });
+        setRecentTileCoords([{ x, y }]);
     };
-    // Renders board as a grid of BoardCells
+    //Render board and cells
     return (
         <div ref={wrapperRef} className="absolute inset-0 overflow-hidden">
-            {gridSizeX > 0 && gridSizeY > 0 && (
-                <div
-                    id="game-board"
-                    className="grid"
-                    style={{
-                        display: "grid",
-                        gridTemplateColumns: `repeat(${gridSizeX}, ${BOARD_SQUARE_WIDTH}px)`,
-                        gridTemplateRows: `repeat(${gridSizeY}, ${BOARD_SQUARE_HEIGHT}px)`,
-                        backgroundColor: "transparent",
-                        border: "2px solid black",
-                        backgroundSize: "cover",
-                        backgroundImage:
-                            "url('/images/redTealGeo_background.jpg')",
-                        position: "relative",
-                        zIndex: 0,
-                    }}
-                >
-                    {[...Array(gridSizeX * gridSizeY)].map((_, index) => {
-                        const x = index % gridSizeX;
-                        const y = Math.floor(index / gridSizeX);
-                        const tile = tiles[`${x},${y}`];
-
-                        return (
-                            <BoardCell
-                                key={`${x},${y}-${gridSizeX}-${gridSizeY}`}
-                                x={x}
-                                y={y}
-                                tile={tile}
-                                tiles={tiles}
-                                isValid={validWords.has(`${x},${y}`)}
-                                onDrop={handleDrop}
-                                onClick={handleClickEvent}
-                            />
-                        );
-                    })}
-                </div>
-            )}
+            <div
+                id="game-board"
+                className="grid"
+                style={{
+                    gridTemplateColumns: `repeat(${gridSizeX},${BOARD_SQUARE_WIDTH}px)`,
+                    gridTemplateRows: `repeat(${gridSizeY},${BOARD_SQUARE_HEIGHT}px)`,
+                }}
+            >
+                {[...Array(gridSizeX * gridSizeY)].map((_, i) => {
+                    const x = i % gridSizeX;
+                    const y = Math.floor(i / gridSizeX);
+                    return (
+                        <BoardCell
+                            key={`${x},${y}`}
+                            x={x}
+                            y={y}
+                            tile={tiles[`${x},${y}`]}
+                            tiles={tiles}
+                            isValid={validWords.has(`${x},${y}`)}
+                            onDrop={handleDrop}
+                            onClick={handleClickEvent}
+                        />
+                    );
+                })}
+            </div>
         </div>
     );
 };

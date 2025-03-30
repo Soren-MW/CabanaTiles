@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@welldone-software/why-did-you-render": "^10.0.1",
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1"
   },
