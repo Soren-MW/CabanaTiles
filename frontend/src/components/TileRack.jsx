@@ -9,8 +9,15 @@ import Tile from "./Tile";
 const TileRack = ({ tiles, onSpin }) => {
     return (
         <div className="w-full max-w-none transition-all duration-300 ease-in-out flex flex-col items-center">
-            {/* A container for tile pieces meant to emulate Scrabble racks, */}
-            <div className="flex flex-wrap justify-center gap-2 p-3 rounded-xl bg-white/30 backdrop-blur-md shadow-inner border border-white/60 ring-1 ring-white/50">
+            <div
+                className="flex flex-wrap justify-center gap-2 p-3 rounded-xl"
+                style={{
+                    backgroundImage: "url('/images/wood092.jpg')",
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                    boxShadow: "0 6px 12px rgba(0, 0, 0, 0.3)",
+                }}
+            >
                 {tiles.map((tile, index) => (
                     <Tile
                         key={tile.id}
@@ -19,6 +26,7 @@ const TileRack = ({ tiles, onSpin }) => {
                         origin="rack"
                         rackIndex={index}
                         isNew={tile.isNew}
+                        onRightClick={() => onSpin(tile)}
                     />
                 ))}
             </div>

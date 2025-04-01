@@ -1,0 +1,22 @@
+.spinzone-container {
+    position: absolute;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    width: 140px;
+    height: 140px;
+    z-index: 50;
+    pointer-events: none;
+}
+
+.spinzone-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+}
+
+@media (max-width: 1279px) {
+    .spinzone-container {
+        display: none;
+    }
+}

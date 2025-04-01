@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import BoardCell from "./BoardCell";
-// Constants for square dimensions
+
 const BOARD_SQUARE_WIDTH = 60;
 const BOARD_SQUARE_HEIGHT = 60;
 
@@ -12,18 +12,17 @@ const GameBoard = ({
     onTileReturnToRack,
     processedTileIdsRef,
     triggerBoogie,
+    onSpin,
+    remainingTiles,
+    triggerWin,
 }) => {
     const wrapperRef = useRef(null);
     const [gridSizeX, setGridSizeX] = useState(10);
     const [gridSizeY, setGridSizeY] = useState(10);
     const [validWords, setValidWords] = useState(new Set());
-    const [recentTileCoords, setRecentTileCoords] = useState([]);
-    const prevWordsRef = useRef(new Map());
-    const invalidPositionsRef = useRef(new Set());
     const wordSetRef = useRef(null);
     const dropSoundRef = useRef(null);
 
-    // Loads and prepares sound feedback for tile placement
     useEffect(() => {
         dropSoundRef.current = new Audio("/sounds/Click.mp3");
         dropSoundRef.current.volume = 0.5;
@@ -33,13 +32,13 @@ const GameBoard = ({
             dropSoundRef.current = null;
         };
     }, []);
-    // Dynamically resizes grid as user shifts window dimensions
+
     useEffect(() => {
         const updateGridSize = () => {
             const { width, height } =
                 wrapperRef.current.getBoundingClientRect();
-            const cols = Math.floor(width / BOARD_SQUARE_WIDTH);
-            const rows = Math.floor(height / BOARD_SQUARE_HEIGHT);
+            const cols = Math.ceil(width / BOARD_SQUARE_WIDTH);
+            const rows = Math.ceil(height / BOARD_SQUARE_HEIGHT);
             setGridSizeX(cols);
             setGridSizeY(rows);
         };
@@ -48,7 +47,6 @@ const GameBoard = ({
         return () => window.removeEventListener("resize", updateGridSize);
     }, []);
 
-    // Loads JSON of SOWPODS, a popular Scrabble dictionary, to use for fast word validation
     useEffect(() => {
         fetch("/sowpods.json")
             .then((res) => res.json())
@@ -62,8 +60,6 @@ const GameBoard = ({
             })
             .catch((err) => console.error("Failed to load word list", err));
     }, []);
-
-    // Hardcoded two-letter word set leftover from when dictionary API was used for validation. Will get rid of it later.
 
     const twoLetterWords = new Set([
         "aa",
@@ -171,7 +167,7 @@ const GameBoard = ({
         "yo",
         "za",
     ]);
-    // Checks if word is valid. Pushes to whitelist of 2-letter words if length is 2, SOWPODS if greater.
+
     const isValidWord = (word) => {
         if (!word || word.length < 2) return false;
         const clean = word.toLowerCase();
@@ -180,13 +176,13 @@ const GameBoard = ({
             : wordSetRef.current?.has(clean);
     };
 
-    //Implements BFS to confirm that all words on the board are contiguous (or connected)
     const isBoardContiguous = () => {
         const tilePositions = Object.keys(tiles);
         if (tilePositions.length === 0) return true;
         const visited = new Set();
         const queue = [tilePositions[0]];
         visited.add(tilePositions[0]);
+
         while (queue.length > 0) {
             const current = queue.shift();
             const [x, y] = current.split(",").map(Number);
@@ -204,138 +200,102 @@ const GameBoard = ({
                 }
             }
         }
+
         return visited.size === tilePositions.length;
     };
-    /**
-     * Checks rows and cols near recently changed tiles
-     * Checks if words are still valid
-     * Populates validWords for visual feedback (tiles are green if words are valid)
-     * Triggers "Boogie" if all words are valid + contiguous + the rack is empty.
-     
-     */
-    const validateAround = (coordsArray) => {
-        const validatedWords = new Set();
-        prevWordsRef.current.clear();
-        invalidPositionsRef.current.clear();
-        const wordMembershipMap = new Map();
 
-        const addToWordMap = (pos, word) => {
-            const posKey = `${pos}`;
-            if (!wordMembershipMap.has(posKey)) {
-                wordMembershipMap.set(posKey, new Set());
-            }
-            wordMembershipMap.get(posKey).add(word);
+    const validateWords = () => {
+        const words = [];
+        const tileToWords = new Map();
+        const validWordSet = new Set();
+
+        const addTileToWord = (pos, word) => {
+            if (!tileToWords.has(pos)) tileToWords.set(pos, new Set());
+            tileToWords.get(pos).add(word);
         };
 
-        const checkAndAddWord = (word, positions) => {
-            if (word.length < 2) return;
-            const lowerWord = word.toLowerCase();
-            const key = positions.join("|");
-            const prevWord = prevWordsRef.current.get(key);
-            if (prevWord === word) return;
-            prevWordsRef.current.set(key, word);
+        const extractWords = () => {
+            for (let y = 0; y < gridSizeY; y++) {
+                let word = "";
+                let positions = [];
+                for (let x = 0; x < gridSizeX; x++) {
+                    const key = `${x},${y}`;
+                    const tile = tiles[key];
+                    if (tile?.letter) {
+                        word += tile.letter;
+                        positions.push(key);
+                    } else {
+                        if (word.length > 1) words.push({ word, positions });
+                        word = "";
+                        positions = [];
+                    }
+                }
+                if (word.length > 1) words.push({ word, positions });
+            }
+
+            for (let x = 0; x < gridSizeX; x++) {
+                let word = "";
+                let positions = [];
+                for (let y = 0; y < gridSizeY; y++) {
+                    const key = `${x},${y}`;
+                    const tile = tiles[key];
+                    if (tile?.letter) {
+                        word += tile.letter;
+                        positions.push(key);
+                    } else {
+                        if (word.length > 1) words.push({ word, positions });
+                        word = "";
+                        positions = [];
+                    }
+                }
+                if (word.length > 1) words.push({ word, positions });
+            }
+        };
+
+        extractWords();
+
+        for (const { word, positions } of words) {
+            const lower = word.toLowerCase();
             const isValid = isValidWord(word);
-            positions.forEach((pos) => {
-                addToWordMap(`${pos}`, lowerWord);
-            });
-            if (isValid) {
-                validatedWords.add(lowerWord);
-            } else {
-                positions.forEach((pos) =>
-                    invalidPositionsRef.current.add(`${pos}`)
-                );
+            if (isValid) validWordSet.add(lower);
+            for (const pos of positions) {
+                addTileToWord(pos, lower);
             }
-        };
-
-        const checkRow = (row) => {
-            let word = "",
-                positions = [];
-            for (let col = 0; col < gridSizeX; col++) {
-                const key = `${col},${row}`;
-                const tile = tiles[key];
-                if (tile?.letter) {
-                    word += tile.letter;
-                    positions.push(key);
-                } else {
-                    checkAndAddWord(word, positions);
-                    word = "";
-                    positions = [];
-                }
-            }
-            checkAndAddWord(word, positions);
-        };
-
-        const checkCol = (col) => {
-            let word = "",
-                positions = [];
-            for (let row = 0; row < gridSizeY; row++) {
-                const key = `${col},${row}`;
-                const tile = tiles[key];
-                if (tile?.letter) {
-                    word += tile.letter;
-                    positions.push(key);
-                } else {
-                    checkAndAddWord(word, positions);
-                    word = "";
-                    positions = [];
-                }
-            }
-            checkAndAddWord(word, positions);
-        };
-
-        for (const { x, y } of coordsArray) {
-            checkRow(y);
-            checkCol(x);
         }
 
         const trulyValidPositions = new Set();
-        for (const [pos, wordSet] of wordMembershipMap.entries()) {
+        for (const [pos, wordSet] of tileToWords.entries()) {
             let allValid = true;
             for (const word of wordSet) {
-                if (!validatedWords.has(word)) {
+                if (!validWordSet.has(word)) {
                     allValid = false;
                     break;
                 }
             }
-            if (allValid) {
-                trulyValidPositions.add(pos);
-            }
+            if (allValid) trulyValidPositions.add(pos);
         }
 
-        setValidWords((prev) => {
-            const updated = new Set(prev);
-            for (const pos of Object.keys(tiles)) {
-                if (trulyValidPositions.has(pos)) {
-                    updated.add(pos);
-                } else {
-                    updated.delete(pos);
-                }
-            }
-            return updated;
-        });
+        setValidWords(trulyValidPositions);
 
-        const allPlacedTilesValid = Object.keys(tiles).every((key) =>
+        const allPlacedValid = Object.keys(tiles).every((key) =>
             trulyValidPositions.has(key)
         );
         const contiguous = isBoardContiguous();
         const rackEmpty = rackTiles.length === 0;
 
-        if (allPlacedTilesValid && contiguous && rackEmpty) {
-            triggerBoogie();
+        if (allPlacedValid && contiguous && rackEmpty) {
+            if (remainingTiles > 0) {
+                triggerBoogie();
+            } else {
+                triggerWin();
+            }
         }
     };
-    // Starts validation whenever tile state changes. Will optimize this in the future
+
     useEffect(() => {
-        if (Object.keys(tiles).length > 0) {
-            const allCoords = Object.keys(tiles).map((key) => {
-                const [x, y] = key.split(",").map(Number);
-                return { x, y };
-            });
-            validateAround(allCoords);
-        }
+        validateWords();
     }, [tiles, rackTiles]);
 
-    // Handles tile placement, rendering, sound, and validation of nearby grid spaces.
     const handleDrop = useCallback(
         (item, x, y) => {
             const originalTile = { ...item };
@@ -358,20 +318,10 @@ const GameBoard = ({
             if (originalTile.origin === "rack") {
                 onTilePlacedFromRack(originalTile.id);
             }
-
-            const expandedCoords = [
-                { x, y },
-                { x: x - 1, y },
-                { x: x + 1, y },
-                { x, y: y - 1 },
-                { x, y: y + 1 },
-            ];
-            validateAround(expandedCoords);
-            setRecentTileCoords([{ x, y }]);
         },
-        [setTiles, onTilePlacedFromRack, validateAround]
+        [setTiles, onTilePlacedFromRack]
     );
-    // Logic for returning tile to rack with left-click
+
     const handleClickEvent = (x, y) => {
         const key = `${x},${y}`;
         onTileReturnToRack(tiles[key]);
@@ -380,9 +330,8 @@ const GameBoard = ({
             delete updated[key];
             return updated;
         });
-        setRecentTileCoords([{ x, y }]);
     };
-    //Render board and cells
+
     return (
         <div ref={wrapperRef} className="absolute inset-0 overflow-hidden">
             <div
@@ -406,6 +355,7 @@ const GameBoard = ({
                             isValid={validWords.has(`${x},${y}`)}
                             onDrop={handleDrop}
                             onClick={handleClickEvent}
+                            onSpin={onSpin}
                         />
                     );
                 })}

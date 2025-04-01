@@ -3,7 +3,12 @@ import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import GameBoard from "./components/GameBoard";
 import TileRack from "./components/TileRack";
-import SpinZone from "./components/SpinZone";
+import CabanaTitle from "./components/CabanaTitle";
+import TileCounter from "./components/TileCounter";
+import BoogieEffect from "./components/BoogieEffect";
+import ShakeUpEffect from "./components/ShakeUpEffect";
+import CountdownOverlay from "./components/CountdownOverlay";
+import WinOverlay from "./components/WinOverlay";
 import { CustomDragPreview } from "./components/Tile";
 
 /**
@@ -81,10 +86,16 @@ function App() {
         fullPool.slice(rackSize)
     );
     const [tiles, setTiles] = useState({});
+    const [showBoogieEffect, setShowBoogieEffect] = useState(false);
+    const [showShakeup, setShowShakeup] = useState(false);
+    const [isCountingDown, setIsCountingDown] = useState(true);
+    const [showWin, setShowWin] = useState(false);
     const processedTileIds = useRef(new Set());
-
     const remainingPoolRef = useRef(remainingPool);
+
     const triggerBoogie = () => {
+        setShowBoogieEffect(true);
+        setTimeout(() => setShowBoogieEffect(false), 1000); // hide after 1s
         const event = new Event("triggerBoogie");
         window.dispatchEvent(event);
     };
@@ -110,14 +121,19 @@ function App() {
                     isNew: true,
                 };
 
-                setRackTiles((prevRack) => [...prevRack, boogieTile]);
+                // Add tile to rack and calculate position
+                setRackTiles((prevRack) => {
+                    const updatedRack = [...prevRack, boogieTile];
+
+                    return updatedRack;
+                });
+
                 console.log("Boogie", boogieTile);
                 console.log("Remaining pool size:", rest.length);
                 return rest;
             });
         };
 
-        // Make sure Boogie only yields a single tile
         if (!window.boogieListenerAdded) {
             window.addEventListener("triggerBoogie", handleBoogie);
             window.boogieListenerAdded = true;
@@ -139,6 +155,7 @@ function App() {
     };
     // Handles tile logic from both board and rack, prevents overdraws
     const handleSpin = (tileToSpin) => {
+        console.log("🔧 handleSpin invoked with:", tileToSpin);
         if (remainingPoolRef.current.length < 3) {
             alert("Not enough tiles left in the pool!");
             return;
@@ -159,90 +176,120 @@ function App() {
                   ]
                 : [...prevRack, ...newTiles]
         );
+        console.log("🎯 Spinning tile:", tileToSpin);
 
         if (tileToSpin.origin === "board") {
             onBoardTileSpun(tileToSpin);
         }
+        setShowShakeup(true);
+        setTimeout(() => setShowShakeup(false), 1500);
     };
 
     return (
         <DndProvider backend={HTML5Backend}>
             <CustomDragPreview />
             <div className="relative w-screen h-screen overflow-hidden">
-                <div
-                    className="absolute inset-0 w-full h-full bg-cover bg-center z-0"
-                    style={{
-                        backgroundImage:
-                            "url('/images/redTealGeo_background.jpg')",
-                    }}
-                ></div>
-
-                <div className="absolute bottom-5 w-full flex justify-center z-50 px-4">
-                    <TileRack tiles={rackTiles} onSpin={handleSpin} />
-                </div>
-
-                <div className="absolute inset-0 z-10">
-                    <GameBoard
-                        tiles={tiles}
-                        setTiles={setTiles}
-                        rackTiles={rackTiles}
-                        onTilePlacedFromRack={(tileId) =>
-                            setRackTiles((prev) =>
-                                prev.filter((tile) => tile.id !== tileId)
-                            )
-                        }
-                        onTileReturnToRack={(tile) => {
-                            if (
-                                !tile?.id ||
-                                processedTileIds.current.has(tile.id)
-                            ) {
-                                console.warn(
-                                    "Duplicate or missing ID blocked:",
-                                    tile
-                                );
-                                return;
-                            }
-
-                            processedTileIds.current.add(tile.id);
-
-                            const safeTile = {
-                                ...tile,
-                                origin: "rack",
-                                x: null,
-                                y: null,
-                            };
-
-                            setRackTiles((prev) =>
-                                prev.some((t) => t.id === safeTile.id)
-                                    ? prev
-                                    : [...prev, safeTile]
-                            );
-
-                            processedTileIds.current.delete(tile.id);
+                {/* Background Layer */}
+                <div className="absolute inset-0 w-full h-full z-0">
+                    <div
+                        className="absolute inset-0 w-full h-full bg-cover bg-center"
+                        style={{
+                            backgroundImage:
+                                "url('/images/redTealGeo_background.jpg')",
                         }}
-                        processedTileIdsRef={processedTileIds}
-                        triggerBoogie={triggerBoogie}
+                    ></div>
+
+                    {/* Centered Cabana Title Behind Grid */}
+                    <CabanaTitle />
+                </div>
+
+                {/* COUNTDOWN OVERLAY */}
+                {isCountingDown && (
+                    <CountdownOverlay
+                        onComplete={() => setIsCountingDown(false)}
                     />
-                </div>
+                )}
 
-                <SpinZone onSpin={handleSpin} />
+                {/* GAME STARTS AFTER COUNTDOWN */}
+                {!isCountingDown && (
+                    <>
+                        {/* Tile Rack */}
+                        <div className="absolute bottom-5 w-full flex justify-center z-50 px-4">
+                            <TileRack tiles={rackTiles} onSpin={handleSpin} />
+                        </div>
 
-                <div className="absolute bottom-1 left-1 z-50 text-xs text-white bg-black/50 px-2 py-1 rounded">
-                    <div> Pile: {remainingPool.length}</div>
-                    <div> Rack: {rackTiles.length}</div>
-                </div>
+                        {/* Game Board */}
+                        <div className="absolute inset-0 z-10">
+                            <GameBoard
+                                tiles={tiles}
+                                setTiles={setTiles}
+                                rackTiles={rackTiles}
+                                onTilePlacedFromRack={(tileId) =>
+                                    setRackTiles((prev) =>
+                                        prev.filter(
+                                            (tile) => tile.id !== tileId
+                                        )
+                                    )
+                                }
+                                onTileReturnToRack={(tile) => {
+                                    if (
+                                        !tile?.id ||
+                                        processedTileIds.current.has(tile.id)
+                                    ) {
+                                        console.warn(
+                                            "Duplicate or missing ID blocked:",
+                                            tile
+                                        );
+                                        return;
+                                    }
 
-                <div className="absolute bottom-1 right-1 z-50 text-xs text-white bg-black/50 px-2 py-1 rounded">
-                    Pattern via{" "}
-                    <a
-                        href="https://publicdomainimages.net"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline"
-                    >
-                        Public Domain Images
-                    </a>
-                </div>
+                                    processedTileIds.current.add(tile.id);
+
+                                    const safeTile = {
+                                        ...tile,
+                                        origin: "rack",
+                                        x: null,
+                                        y: null,
+                                    };
+
+                                    setRackTiles((prev) =>
+                                        prev.some((t) => t.id === safeTile.id)
+                                            ? prev
+                                            : [...prev, safeTile]
+                                    );
+
+                                    processedTileIds.current.delete(tile.id);
+                                }}
+                                processedTileIdsRef={processedTileIds}
+                                triggerBoogie={triggerBoogie}
+                                remainingTiles={remainingPool.length}
+                                triggerWin={() => setShowWin(true)}
+                            />
+                        </div>
+
+                        {/* Tile Counter */}
+                        <TileCounter
+                            pileCount={remainingPool.length}
+                            rackCount={rackTiles.length}
+                        />
+                    </>
+                )}
+
+                {/* Boogie & ShakeUp Effects */}
+                <BoogieEffect
+                    show={showBoogieEffect}
+                    onComplete={() => setShowBoogieEffect(false)}
+                />
+                <ShakeUpEffect
+                    show={showShakeup}
+                    onComplete={() => setShowShakeup(false)}
+                />
+
+                {/* WIN OVERLAY */}
+                <WinOverlay
+                    show={showWin}
+                    onComplete={() => setShowWin(false)}
+                />
             </div>
         </DndProvider>
     );

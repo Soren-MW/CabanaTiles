@@ -2,30 +2,27 @@ import React, { useEffect, useRef } from "react";
 import { useDrop } from "react-dnd";
 import Tile from "./Tile";
 
-/* Boardcell represents a single cell on the game board. 
-It handles drag-and-drop interactions with ReactDND
-Also some tile placement logic and visual feedback related to word validity.
-Recently stripped of certain visual feedback elements due to insane performance tax
-
-*/
-
-const BoardCell = ({ x, y, tile, tiles, onDrop, onClick, isValid }) => {
-    // Maintains a live ref to the latest tile object to avoid stale closure .
+const BoardCell = ({
+    x,
+    y,
+    tile,
+    tiles,
+    onDrop,
+    onClick,
+    isValid,
+    onSpin = () => {},
+}) => {
     const tilesRef = useRef(tiles);
     useEffect(() => {
         tilesRef.current = tiles;
     }, [tiles]);
 
-    // Configures cell as a potential location for a tile drop
     const [, drop] = useDrop(() => ({
         accept: "TILE",
         canDrop: () => {
-            // Unless it's occupied
             const key = `${x},${y}`;
             return !tilesRef.current[key];
         },
-
-        // If not, the tile drops on the square
         drop: (item) => {
             const key = `${x},${y}`;
             if (!tilesRef.current[key]) {
@@ -33,7 +30,7 @@ const BoardCell = ({ x, y, tile, tiles, onDrop, onClick, isValid }) => {
             }
         },
     }));
-    // Keeps track of previous tile for console logging removal and placement
+
     const prevTileRef = useRef(tile);
     useEffect(() => {
         const prevTile = prevTileRef.current;
@@ -62,12 +59,29 @@ const BoardCell = ({ x, y, tile, tiles, onDrop, onClick, isValid }) => {
                     y={y}
                     isValid={isValid}
                     origin="board"
+                    onRightClick={() => {
+                        if (tile && typeof onSpin === "function") {
+                            onSpin({
+                                id: tile.id,
+                                letter: tile.letter,
+                                origin: "board",
+                                x,
+                                y,
+                                isNew: tile.isNew || false,
+                            });
+                        } else {
+                            console.warn(
+                                "Tile or onSpin missing on right-click",
+                                { tile, x, y }
+                            );
+                        }
+                    }}
                 />
             ) : null}
         </div>
     );
 };
-// Prevent unnecessary renders of cells unless the tile or validity changes
+
 export default React.memo(BoardCell, (prevProps, nextProps) => {
     return (
         prevProps.tile === nextProps.tile &&
