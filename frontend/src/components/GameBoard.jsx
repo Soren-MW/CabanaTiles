@@ -205,6 +205,7 @@ const GameBoard = ({
     };
 
     const validateWords = () => {
+        performance.mark("validateWords-start");
         const words = [];
         const tileToWords = new Map();
         const validWordSet = new Set();
@@ -290,11 +291,38 @@ const GameBoard = ({
                 triggerWin();
             }
         }
+        performance.mark("validateWords-end");
+        performance.measure(
+            "validateWords",
+            "validateWords-start",
+            "validateWords-end"
+        );
     };
 
+    const prevTilesRef = useRef(tiles);
+
     useEffect(() => {
-        validateWords();
-    }, [tiles, rackTiles]);
+        const prevKeys = Object.keys(prevTilesRef.current || {});
+        const currentKeys = Object.keys(tiles);
+
+        const tilesChanged =
+            prevKeys.length !== currentKeys.length ||
+            prevKeys.some((key) => {
+                const prevTile = prevTilesRef.current[key];
+                const newTile = tiles[key];
+                return (
+                    !newTile ||
+                    prevTile?.id !== newTile?.id ||
+                    prevTile?.letter !== newTile?.letter
+                );
+            });
+
+        if (tilesChanged) {
+            console.count("📏 validateWords triggered");
+            validateWords();
+            prevTilesRef.current = tiles;
+        }
+    }, [tiles]);
 
     const handleDrop = useCallback(
         (item, x, y) => {
@@ -307,6 +335,8 @@ const GameBoard = ({
             };
 
             setTiles((prevTiles) => {
+                console.count("setTiles");
+
                 const updatedTiles = { ...prevTiles };
                 if (originalTile.x !== null && originalTile.y !== null) {
                     delete updatedTiles[`${originalTile.x},${originalTile.y}`];
@@ -322,15 +352,27 @@ const GameBoard = ({
         [setTiles, onTilePlacedFromRack]
     );
 
-    const handleClickEvent = (x, y) => {
-        const key = `${x},${y}`;
-        onTileReturnToRack(tiles[key]);
-        setTiles((prev) => {
-            const updated = { ...prev };
-            delete updated[key];
-            return updated;
-        });
-    };
+    const handleClickEvent = useCallback(
+        (x, y) => {
+            const key = `${x},${y}`;
+            onTileReturnToRack(tiles[key]);
+            setTiles((prev) => {
+                console.count("setTiles");
+
+                const updated = { ...prev };
+                delete updated[key];
+                return updated;
+            });
+        },
+        [tiles, setTiles, onTileReturnToRack]
+    );
+
+    const memoizedOnSpin = useCallback(
+        (tile) => {
+            onSpin(tile);
+        },
+        [onSpin]
+    );
 
     return (
         <div ref={wrapperRef} className="absolute inset-0 overflow-hidden">
@@ -345,17 +387,19 @@ const GameBoard = ({
                 {[...Array(gridSizeX * gridSizeY)].map((_, i) => {
                     const x = i % gridSizeX;
                     const y = Math.floor(i / gridSizeX);
+                    const key = `${x},${y}`;
+                    const isOccupied = Boolean(tiles[key]);
                     return (
                         <BoardCell
                             key={`${x},${y}`}
                             x={x}
                             y={y}
-                            tile={tiles[`${x},${y}`]}
-                            tiles={tiles}
+                            tile={tiles[`${x},${y}`]} // ✅ still needed
                             isValid={validWords.has(`${x},${y}`)}
+                            isOccupied={isOccupied} // ✅ new!
                             onDrop={handleDrop}
                             onClick={handleClickEvent}
-                            onSpin={onSpin}
+                            onSpin={memoizedOnSpin}
                         />
                     );
                 })}

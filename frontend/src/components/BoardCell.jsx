@@ -6,26 +6,17 @@ const BoardCell = ({
     x,
     y,
     tile,
-    tiles,
+    isOccupied,
     onDrop,
     onClick,
     isValid,
     onSpin = () => {},
 }) => {
-    const tilesRef = useRef(tiles);
-    useEffect(() => {
-        tilesRef.current = tiles;
-    }, [tiles]);
-
     const [, drop] = useDrop(() => ({
         accept: "TILE",
-        canDrop: () => {
-            const key = `${x},${y}`;
-            return !tilesRef.current[key];
-        },
+        canDrop: () => !isOccupied,
         drop: (item) => {
-            const key = `${x},${y}`;
-            if (!tilesRef.current[key]) {
+            if (!isOccupied) {
                 onDrop(item, x, y);
             }
         },
@@ -70,10 +61,10 @@ const BoardCell = ({
                                 isNew: tile.isNew || false,
                             });
                         } else {
-                            console.warn(
+                            /*console.warn(
                                 "Tile or onSpin missing on right-click",
                                 { tile, x, y }
-                            );
+                            );*/
                         }
                     }}
                 />

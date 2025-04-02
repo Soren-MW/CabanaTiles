@@ -9,7 +9,7 @@ import BoogieEffect from "./components/BoogieEffect";
 import ShakeUpEffect from "./components/ShakeUpEffect";
 import CountdownOverlay from "./components/CountdownOverlay";
 import WinOverlay from "./components/WinOverlay";
-import { CustomDragPreview } from "./components/Tile";
+import CustomDragPreview from "./components/CustomDragPreview";
 
 /**
  * App manages the game state of CabanaTiles
@@ -155,7 +155,8 @@ function App() {
     };
     // Handles tile logic from both board and rack, prevents overdraws
     const handleSpin = (tileToSpin) => {
-        console.log("🔧 handleSpin invoked with:", tileToSpin);
+        /**console.log("🔧 handleSpin invoked with:", tileToSpin); */
+
         if (remainingPoolRef.current.length < 3) {
             alert("Not enough tiles left in the pool!");
             return;
@@ -176,7 +177,7 @@ function App() {
                   ]
                 : [...prevRack, ...newTiles]
         );
-        console.log("🎯 Spinning tile:", tileToSpin);
+        /*console.log("🎯 Spinning tile:", tileToSpin); */
 
         if (tileToSpin.origin === "board") {
             onBoardTileSpun(tileToSpin);
@@ -236,10 +237,10 @@ function App() {
                                         !tile?.id ||
                                         processedTileIds.current.has(tile.id)
                                     ) {
-                                        console.warn(
+                                        /*console.warn(
                                             "Duplicate or missing ID blocked:",
                                             tile
-                                        );
+                                        );*/
                                         return;
                                     }
 
@@ -261,6 +262,7 @@ function App() {
                                     processedTileIds.current.delete(tile.id);
                                 }}
                                 processedTileIdsRef={processedTileIds}
+                                onSpin={handleSpin}
                                 triggerBoogie={triggerBoogie}
                                 remainingTiles={remainingPool.length}
                                 triggerWin={() => setShowWin(true)}
