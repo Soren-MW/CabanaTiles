@@ -1,0 +1,30 @@
+@keyframes twinkleFade {
+    0% {
+        opacity: 0;
+        transform: scale(1);
+    }
+    10% {
+        opacity: 1;
+        transform: scale(1.2);
+    }
+    50% {
+        opacity: 0.7;
+        transform: scale(1);
+    }
+    90% {
+        opacity: 1;
+        transform: scale(1.2);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(1);
+    }
+}
+
+.sparkle {
+    position: absolute;
+    width: 1.5rem;
+    animation: twinkleFade 12s ease-in-out infinite;
+    filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.6));
+    pointer-events: none;
+}

@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "@welldone-software/why-did-you-render": "^10.0.1",
+    "framer-motion": "^12.6.3",
+    "react-dnd": "^16.0.1",
+    "react-dnd-html5-backend": "^16.0.1",
+    "react-router-dom": "^7.4.1"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.2"
+  }
+}
