@@ -10,11 +10,11 @@ const GameBoard = ({
     rackTiles,
     onTilePlacedFromRack,
     onTileReturnToRack,
-    processedTileIdsRef,
     triggerBoogie,
     onSpin,
     remainingTiles,
     triggerWin,
+    setRackTiles,
 }) => {
     const wrapperRef = useRef(null);
     const [gridSizeX, setGridSizeX] = useState(10);
@@ -322,33 +322,65 @@ const GameBoard = ({
             prevTilesRef.current = tiles;
         }
     }, [tiles]);
-
     const handleDrop = useCallback(
         (item, x, y) => {
-            const originalTile = { ...item };
-            const movedTile = {
-                ...originalTile,
-                x,
-                y,
-                origin: "board",
-            };
-
             setTiles((prevTiles) => {
-                console.count("setTiles");
+                const key = `${x},${y}`;
+
+                if (prevTiles[key]) {
+                    console.warn("Blocked drop on occupied square:", key);
+
+                    if (item.origin === "rack") {
+                        const safeTile = {
+                            ...item,
+                            origin: "rack",
+                            x: null,
+                            y: null,
+                        };
+
+                        setRackTiles((prevRack) => {
+                            const exists = prevRack.some(
+                                (t) => t.id === safeTile.id
+                            );
+                            if (!exists) {
+                                console.log(
+                                    "Returning tile to rack:",
+                                    safeTile
+                                );
+                                return [...prevRack, safeTile];
+                            }
+                            return prevRack;
+                        });
+                    }
+
+                    return prevTiles;
+                }
+
+                const originalTile = { ...item };
+                const movedTile = {
+                    ...originalTile,
+                    x,
+                    y,
+                    origin: "board",
+                };
 
                 const updatedTiles = { ...prevTiles };
+
                 if (originalTile.x !== null && originalTile.y !== null) {
                     delete updatedTiles[`${originalTile.x},${originalTile.y}`];
                 }
-                updatedTiles[`${x},${y}`] = movedTile;
+
+                updatedTiles[key] = movedTile;
+                console.log("setTiles: board drop");
+
+                if (item.origin === "rack") {
+                    onTilePlacedFromRack(item.id);
+                }
+
                 return updatedTiles;
             });
-
-            if (originalTile.origin === "rack") {
-                onTilePlacedFromRack(originalTile.id);
-            }
         },
-        [setTiles, onTilePlacedFromRack]
+        [setTiles, setRackTiles, onTilePlacedFromRack]
     );
 
     const handleClickEvent = useCallback(
@@ -393,8 +425,8 @@ const GameBoard = ({
                             key={`${x},${y}`}
                             x={x}
                             y={y}
-                            tile={tiles[`${x},${y}`]}
-                            isValid={validWords.has(`${x},${y}`)}
+                            tile={tiles[key]}
+                            isValid={validWords.has(key)}
                             isOccupied={isOccupied}
                             onDrop={handleDrop}
                             onClick={handleClickEvent}

@@ -6,6 +6,11 @@ import Tile from "./Tile";
  * Additional logic to prevent overdrawing (and subsequent visual cluttering) is being worked on.
  */
 const TileRack = ({ tiles, onSpin }) => {
+    console.log(
+        "RACK:",
+        tiles.map((t) => t.id)
+    );
+
     return (
         <div className="w-full border-b-2 border-white/30 backdrop-blur-sm bg-[rgba(0,0,0,0.2)] flex justify-center items-center h-full">
             <div className="flex flex-wrap justify-center gap-2 px-4">
