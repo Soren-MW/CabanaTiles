@@ -3,14 +3,12 @@ import { useDrag, useDragLayer } from "react-dnd";
 import { getEmptyImage } from "react-dnd-html5-backend";
 import CustomDragPreview from "./CustomDragPreview";
 
-const BOARD_SQUARE_WIDTH = 60;
-const BOARD_SQUARE_HEIGHT = 60;
-
 const Tile = ({
     id,
     letter,
     x = null,
     y = null,
+    tileSize = 60,
     isValid,
     rackIndex = null,
     origin = "rack",
@@ -57,8 +55,8 @@ const Tile = ({
         preview(getEmptyImage(), { captureDraggingState: true });
     }, [ref, drag, preview]);
 
-    const TILE_WIDTH = BOARD_SQUARE_WIDTH * 0.9;
-    const TILE_HEIGHT = BOARD_SQUARE_HEIGHT * 0.9;
+    const TILE_WIDTH = tileSize * 0.9;
+    const TILE_HEIGHT = tileSize * 0.9;
 
     return (
         <div
@@ -92,16 +90,16 @@ const Tile = ({
                         : ""
                 }`}
             style={{
-                width: `${TILE_WIDTH}px`,
-                height: `${TILE_HEIGHT}px`,
-                fontSize: `${TILE_WIDTH * 0.5}px`,
-                lineHeight: `${TILE_HEIGHT}px`,
+                width: `${tileSize * 0.97}px`,
+                height: `${tileSize * 0.97}px`,
+                fontSize: `${tileSize * 0.6}px`,
+                lineHeight: 1,
                 backgroundColor: isValid ? "#22c55e" : "#ffffff",
                 backgroundImage: isValid
                     ? "linear-gradient(to bottom right, rgba(255,255,255,0.4), rgba(34,197,94,0.2))"
                     : "linear-gradient(to bottom right, rgba(255,255,255,0.6), rgba(255,255,255,0.1))",
                 color: isValid ? "#ffffff" : "#000000",
-                borderRadius: "8px",
+                borderRadius: `${tileSize * 0.15}px`,
                 boxShadow:
                     "inset 0 -3px 5px rgba(0,0,0,0.2), 2px 2px 5px rgba(0,0,0,0.3)",
                 textShadow: "1px 1px 2px rgba(0, 0, 0, 0.2)",

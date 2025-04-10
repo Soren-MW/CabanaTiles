@@ -76,6 +76,7 @@ function GamePage() {
     const [showShakeup, setShowShakeup] = useState(false);
     const [isCountingDown, setIsCountingDown] = useState(true);
     const [showWin, setShowWin] = useState(false);
+    const [tileSize, setTileSize] = useState(0);
 
     const remainingPoolRef = useRef(remainingPool);
 
@@ -178,10 +179,14 @@ function GamePage() {
                     />
                 )}
 
-                {!isCountingDown && (
+                {!isCountingDown ? (
                     <>
                         <div className="w-full flex justify-center bg-transparent fixed top-0 left-0 z-20 h-[60px]">
-                            <TileRack tiles={rackTiles} onSpin={handleSpin} />
+                            <TileRack
+                                tiles={rackTiles}
+                                onSpin={handleSpin}
+                                tileSize={tileSize}
+                            />
                         </div>
 
                         <div className="absolute inset-0 z-10">
@@ -215,6 +220,8 @@ function GamePage() {
                                 triggerBoogie={triggerBoogie}
                                 remainingTiles={remainingPool.length}
                                 triggerWin={() => setShowWin(true)}
+                                tileSize={tileSize}
+                                setTileSize={setTileSize}
                             />
                         </div>
 
@@ -223,7 +230,7 @@ function GamePage() {
                             rackCount={rackTiles.length}
                         />
                     </>
-                )}
+                ) : null}
 
                 <BoogieEffect
                     show={showBoogieEffect}

@@ -2,8 +2,10 @@
     position: absolute;
     bottom: 1.5rem;
     left: 1.5rem;
-    width: 280px;
-    height: 140px;
+    width: 18vw;
+    height: 9vw;
+    max-width: 280px;
+    max-height: 140px;
     background-image: url("/images/boomerang_counter.png");
     background-size: contain;
     background-repeat: no-repeat;
@@ -18,7 +20,8 @@
     left: 50%;
     transform: translate(-50%, -50%);
     font-family: "Fontdiner Swanky", cursive;
-    font-size: 1.3rem;
+    font-size: clamp(0.75rem, 1.2vw, 1.2rem);
+
     color: white;
     text-align: center;
     line-height: 1.6;

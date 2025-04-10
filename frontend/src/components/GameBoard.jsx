@@ -1,8 +1,14 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+    useState,
+    useEffect,
+    useRef,
+    useCallback,
+    useLayoutEffect,
+} from "react";
 import BoardCell from "./BoardCell";
 
-const BOARD_SQUARE_WIDTH = 60;
-const BOARD_SQUARE_HEIGHT = 60;
+const TARGET_GRID_COLS = 42;
+const TARGET_GRID_ROWS = 24;
 
 const GameBoard = ({
     tiles,
@@ -15,10 +21,10 @@ const GameBoard = ({
     remainingTiles,
     triggerWin,
     setRackTiles,
+    tileSize,
+    setTileSize,
 }) => {
     const wrapperRef = useRef(null);
-    const [gridSizeX, setGridSizeX] = useState(10);
-    const [gridSizeY, setGridSizeY] = useState(10);
     const [validWords, setValidWords] = useState(new Set());
     const wordSetRef = useRef(null);
     const dropSoundRef = useRef(null);
@@ -33,18 +39,20 @@ const GameBoard = ({
         };
     }, []);
 
-    useEffect(() => {
-        const updateGridSize = () => {
-            const { width, height } =
-                wrapperRef.current.getBoundingClientRect();
-            const cols = Math.ceil(width / BOARD_SQUARE_WIDTH);
-            const rows = Math.ceil(height / BOARD_SQUARE_HEIGHT);
-            setGridSizeX(cols);
-            setGridSizeY(rows);
+    useLayoutEffect(() => {
+        const updateTileSize = () => {
+            const screenWidth = window.innerWidth;
+            const screenHeight = window.innerHeight;
+            const tileWidth = screenWidth / TARGET_GRID_COLS;
+            const tileHeight = screenHeight / TARGET_GRID_ROWS;
+            const newTileSize = Math.floor(Math.min(tileWidth, tileHeight));
+            setTileSize(newTileSize);
         };
-        updateGridSize();
-        window.addEventListener("resize", updateGridSize);
-        return () => window.removeEventListener("resize", updateGridSize);
+
+        updateTileSize();
+        window.addEventListener("resize", updateTileSize);
+
+        return () => window.removeEventListener("resize", updateTileSize);
     }, []);
 
     useEffect(() => {
@@ -52,11 +60,6 @@ const GameBoard = ({
             .then((res) => res.json())
             .then((data) => {
                 wordSetRef.current = new Set(data.map((w) => w.toLowerCase()));
-                console.log(
-                    "Word list loaded with",
-                    wordSetRef.current.size,
-                    "words"
-                );
             })
             .catch((err) => console.error("Failed to load word list", err));
     }, []);
@@ -176,211 +179,116 @@ const GameBoard = ({
             : wordSetRef.current?.has(clean);
     };
 
-    const isBoardContiguous = () => {
-        const tilePositions = Object.keys(tiles);
-        if (tilePositions.length === 0) return true;
-        const visited = new Set();
-        const queue = [tilePositions[0]];
-        visited.add(tilePositions[0]);
-
-        while (queue.length > 0) {
-            const current = queue.shift();
-            const [x, y] = current.split(",").map(Number);
-            const neighbors = [
-                [x - 1, y],
-                [x + 1, y],
-                [x, y - 1],
-                [x, y + 1],
-            ];
-            for (let [nx, ny] of neighbors) {
-                const neighborKey = `${nx},${ny}`;
-                if (tiles[neighborKey] && !visited.has(neighborKey)) {
-                    visited.add(neighborKey);
-                    queue.push(neighborKey);
-                }
-            }
-        }
-
-        return visited.size === tilePositions.length;
-    };
-
-    const validateWords = () => {
-        performance.mark("validateWords-start");
-        const words = [];
+    const validateWords = useCallback(() => {
         const tileToWords = new Map();
         const validWordSet = new Set();
+        const words = [];
 
-        const addTileToWord = (pos, word) => {
-            if (!tileToWords.has(pos)) tileToWords.set(pos, new Set());
-            tileToWords.get(pos).add(word);
-        };
+        // Horizontal words
+        for (let y = 0; y < TARGET_GRID_ROWS; y++) {
+            let word = "",
+                positions = [];
+            for (let x = 0; x < TARGET_GRID_COLS; x++) {
+                const key = `${x},${y}`;
+                const tile = tiles[key];
+                if (tile?.letter) {
+                    const isAdjacent =
+                        positions.length === 0 ||
+                        parseInt(
+                            positions[positions.length - 1].split(",")[0]
+                        ) ===
+                            x - 1;
 
-        const extractWords = () => {
-            for (let y = 0; y < gridSizeY; y++) {
-                let word = "";
-                let positions = [];
-                for (let x = 0; x < gridSizeX; x++) {
-                    const key = `${x},${y}`;
-                    const tile = tiles[key];
-                    if (tile?.letter) {
+                    if (isAdjacent) {
                         word += tile.letter;
                         positions.push(key);
                     } else {
                         if (word.length > 1) words.push({ word, positions });
-                        word = "";
-                        positions = [];
+                        word = tile.letter;
+                        positions = [key];
                     }
+                } else {
+                    if (word.length > 1) words.push({ word, positions });
+                    word = "";
+                    positions = [];
                 }
-                if (word.length > 1) words.push({ word, positions });
             }
+            if (word.length > 1) words.push({ word, positions });
+        }
 
-            for (let x = 0; x < gridSizeX; x++) {
-                let word = "";
-                let positions = [];
-                for (let y = 0; y < gridSizeY; y++) {
-                    const key = `${x},${y}`;
-                    const tile = tiles[key];
-                    if (tile?.letter) {
+        // Vertical words
+        for (let x = 0; x < TARGET_GRID_COLS; x++) {
+            let word = "",
+                positions = [];
+            for (let y = 0; y < TARGET_GRID_ROWS; y++) {
+                const key = `${x},${y}`;
+                const tile = tiles[key];
+                if (tile?.letter) {
+                    const isAdjacent =
+                        positions.length === 0 ||
+                        parseInt(
+                            positions[positions.length - 1].split(",")[1]
+                        ) ===
+                            y - 1;
+
+                    if (isAdjacent) {
                         word += tile.letter;
                         positions.push(key);
                     } else {
                         if (word.length > 1) words.push({ word, positions });
-                        word = "";
-                        positions = [];
+                        word = tile.letter;
+                        positions = [key];
                     }
+                } else {
+                    if (word.length > 1) words.push({ word, positions });
+                    word = "";
+                    positions = [];
                 }
-                if (word.length > 1) words.push({ word, positions });
             }
-        };
-
-        extractWords();
+            if (word.length > 1) words.push({ word, positions });
+        }
 
         for (const { word, positions } of words) {
             const lower = word.toLowerCase();
-            const isValid = isValidWord(word);
+            const isValid = isValidWord(lower);
             if (isValid) validWordSet.add(lower);
             for (const pos of positions) {
-                addTileToWord(pos, lower);
+                if (!tileToWords.has(pos)) tileToWords.set(pos, new Set());
+                tileToWords.get(pos).add(lower);
             }
         }
 
         const trulyValidPositions = new Set();
         for (const [pos, wordSet] of tileToWords.entries()) {
-            let allValid = true;
-            for (const word of wordSet) {
-                if (!validWordSet.has(word)) {
-                    allValid = false;
-                    break;
-                }
-            }
+            const allValid = [...wordSet].every((w) => validWordSet.has(w));
             if (allValid) trulyValidPositions.add(pos);
         }
 
         setValidWords(trulyValidPositions);
-
-        const allPlacedValid = Object.keys(tiles).every((key) =>
-            trulyValidPositions.has(key)
-        );
-        const contiguous = isBoardContiguous();
-        const rackEmpty = rackTiles.length === 0;
-
-        if (allPlacedValid && contiguous && rackEmpty) {
-            if (remainingTiles > 0) {
-                triggerBoogie();
-            } else {
-                triggerWin();
-            }
-        }
-        performance.mark("validateWords-end");
-        performance.measure(
-            "validateWords",
-            "validateWords-start",
-            "validateWords-end"
-        );
-    };
-
-    const prevTilesRef = useRef(tiles);
+    }, [tiles]);
 
     useEffect(() => {
-        const prevKeys = Object.keys(prevTilesRef.current || {});
-        const currentKeys = Object.keys(tiles);
+        validateWords();
+    }, [tiles, validateWords]);
 
-        const tilesChanged =
-            prevKeys.length !== currentKeys.length ||
-            prevKeys.some((key) => {
-                const prevTile = prevTilesRef.current[key];
-                const newTile = tiles[key];
-                return (
-                    !newTile ||
-                    prevTile?.id !== newTile?.id ||
-                    prevTile?.letter !== newTile?.letter
-                );
-            });
-
-        if (tilesChanged) {
-            validateWords();
-            prevTilesRef.current = tiles;
-        }
-    }, [tiles]);
     const handleDrop = useCallback(
         (item, x, y) => {
             setTiles((prevTiles) => {
                 const key = `${x},${y}`;
-
-                if (prevTiles[key]) {
-                    console.warn("Blocked drop on occupied square:", key);
-
-                    if (item.origin === "rack") {
-                        const safeTile = {
-                            ...item,
-                            origin: "rack",
-                            x: null,
-                            y: null,
-                        };
-
-                        setRackTiles((prevRack) => {
-                            const exists = prevRack.some(
-                                (t) => t.id === safeTile.id
-                            );
-                            if (!exists) {
-                                console.log(
-                                    "Returning tile to rack:",
-                                    safeTile
-                                );
-                                return [...prevRack, safeTile];
-                            }
-                            return prevRack;
-                        });
-                    }
-
-                    return prevTiles;
+                if (prevTiles[key]) return prevTiles;
+                const movedTile = { ...item, x, y, origin: "board" };
+                const updated = { ...prevTiles };
+                if (item.x !== null && item.y !== null) {
+                    delete updated[`${item.x},${item.y}`];
                 }
-
-                const originalTile = { ...item };
-                const movedTile = {
-                    ...originalTile,
-                    x,
-                    y,
-                    origin: "board",
-                };
-
-                const updatedTiles = { ...prevTiles };
-
-                if (originalTile.x !== null && originalTile.y !== null) {
-                    delete updatedTiles[`${originalTile.x},${originalTile.y}`];
-                }
-
-                updatedTiles[key] = movedTile;
-                console.log("setTiles: board drop");
-
+                updated[key] = movedTile;
                 if (item.origin === "rack") {
                     onTilePlacedFromRack(item.id);
                 }
-
-                return updatedTiles;
+                return updated;
             });
         },
-        [setTiles, setRackTiles, onTilePlacedFromRack]
+        [setTiles, onTilePlacedFromRack]
     );
 
     const handleClickEvent = useCallback(
@@ -388,8 +296,6 @@ const GameBoard = ({
             const key = `${x},${y}`;
             onTileReturnToRack(tiles[key]);
             setTiles((prev) => {
-                console.count("setTiles");
-
                 const updated = { ...prev };
                 delete updated[key];
                 return updated;
@@ -398,43 +304,58 @@ const GameBoard = ({
         [tiles, setTiles, onTileReturnToRack]
     );
 
-    const memoizedOnSpin = useCallback(
-        (tile) => {
-            onSpin(tile);
-        },
-        [onSpin]
-    );
+    const memoizedOnSpin = useCallback((tile) => onSpin(tile), [onSpin]);
 
-    return (
-        <div ref={wrapperRef} className="absolute inset-0 overflow-hidden">
+    if (!tileSize || tileSize <= 1) {
+        return (
             <div
                 id="game-board"
-                className="grid"
                 style={{
-                    gridTemplateColumns: `repeat(${gridSizeX},${BOARD_SQUARE_WIDTH}px)`,
-                    gridTemplateRows: `repeat(${gridSizeY},${BOARD_SQUARE_HEIGHT}px)`,
+                    visibility: "hidden",
+                    width: "100vw",
+                    height: "100vh",
                 }}
-            >
-                {[...Array(gridSizeX * gridSizeY)].map((_, i) => {
-                    const x = i % gridSizeX;
-                    const y = Math.floor(i / gridSizeX);
-                    const key = `${x},${y}`;
-                    const isOccupied = Boolean(tiles[key]);
-                    return (
-                        <BoardCell
-                            key={`${x},${y}`}
-                            x={x}
-                            y={y}
-                            tile={tiles[key]}
-                            isValid={validWords.has(key)}
-                            isOccupied={isOccupied}
-                            onDrop={handleDrop}
-                            onClick={handleClickEvent}
-                            onSpin={memoizedOnSpin}
-                        />
-                    );
-                })}
-            </div>
+            />
+        );
+    }
+
+    return (
+        <div
+            id="game-board"
+            ref={wrapperRef}
+            className="absolute top-0 left-0"
+            style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100vw",
+                height: "100vh",
+                display: "grid",
+                gridTemplateColumns: `repeat(${TARGET_GRID_COLS}, 1fr)`,
+                gridTemplateRows: `repeat(${TARGET_GRID_ROWS}, 1fr)`,
+                gap: "0px",
+                boxSizing: "border-box",
+            }}
+        >
+            {[...Array(TARGET_GRID_COLS * TARGET_GRID_ROWS)].map((_, i) => {
+                const x = i % TARGET_GRID_COLS;
+                const y = Math.floor(i / TARGET_GRID_COLS);
+                const key = `${x},${y}`;
+                return (
+                    <BoardCell
+                        key={`${x},${y}-${tileSize}`}
+                        x={x}
+                        y={y}
+                        tile={tiles[key]}
+                        tileSize={tileSize}
+                        isValid={validWords.has(key)}
+                        isOccupied={!!tiles[key]}
+                        onDrop={handleDrop}
+                        onClick={handleClickEvent}
+                        onSpin={memoizedOnSpin}
+                    />
+                );
+            })}
         </div>
     );
 };

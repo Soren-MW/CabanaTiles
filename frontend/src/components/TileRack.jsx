@@ -5,7 +5,7 @@ import Tile from "./Tile";
  * TileRack represents the player's tile rack, where tiles are stored before players put them in play via React DnD.
  * Additional logic to prevent overdrawing (and subsequent visual cluttering) is being worked on.
  */
-const TileRack = ({ tiles, onSpin }) => {
+const TileRack = ({ tiles, onSpin, tileSize }) => {
     console.log(
         "RACK:",
         tiles.map((t) => t.id)
@@ -19,6 +19,7 @@ const TileRack = ({ tiles, onSpin }) => {
                         key={tile.id}
                         id={tile.id}
                         letter={tile.letter}
+                        tileSize={tileSize}
                         origin="rack"
                         rackIndex={index}
                         isNew={tile.isNew}

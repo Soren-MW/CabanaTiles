@@ -6,6 +6,7 @@ const BoardCell = ({
     x,
     y,
     tile,
+    tileSize,
     isOccupied,
     onDrop,
     onClick,
@@ -32,11 +33,15 @@ const BoardCell = ({
         }
         prevTileRef.current = tile;
     }, [tile, x, y]);
-
     return (
         <div
             ref={drop}
-            className={`w-[60px] h-[60px] border border-gray-500 bg-transparent flex items-center justify-center
+            style={{
+                width: "100%",
+                height: "100%",
+                aspectRatio: "1 / 1",
+            }}
+            className={`border border-gray-500 bg-transparent flex items-center justify-center
                 ${isValid ? "bg-green-500" : ""}`}
             onClick={(e) => {
                 e.stopPropagation();
@@ -48,6 +53,7 @@ const BoardCell = ({
                     letter={tile.letter}
                     x={x}
                     y={y}
+                    tileSize={tileSize}
                     isValid={isValid}
                     origin="board"
                     onRightClick={() => {
@@ -60,11 +66,6 @@ const BoardCell = ({
                                 y,
                                 isNew: tile.isNew || false,
                             });
-                        } else {
-                            /*console.warn(
-                                "Tile or onSpin missing on right-click",
-                                { tile, x, y }
-                            );*/
                         }
                     }}
                 />
